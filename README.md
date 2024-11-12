@@ -1,5 +1,5 @@
 
-This is the code for our work [Lange, Böhler et al., arXiv...](...). We use Hidden Fermion Determinant States as introduced by [Moreno et al. (2022)]([https://www.pnas.org/doi/10.1073/pnas.2122059119]). 
+This is the code for our work [Lange, Böhler et al., arXiv...](...). We use Hidden Fermion Determinant States as introduced by [Moreno et al. (2022)](https://www.pnas.org/doi/10.1073/pnas.2122059119). 
 
 Hidden Fermion Determinant States (HFDS) are based on a configuration dependent Slater determinant of physical and ancilla fermions, as sketched in the figure below. The implementation can be found in `src/hidden_fermions.py` or `src/hidden_fermions.py`. We recomment to use the latter which includes a global spin rotation symmetry. The implementation is based on NetKet with the required packages listed in `requirements.txt`. The converged states for $6\times 10$ with open boundaries can be found in `results/`. They can be loaded by running
 
