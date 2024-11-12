@@ -1,3 +1,7 @@
+<div align="center">
+    <img width="479" alt="HFDS" src="[https://github.com/HannahLange/HFDSfortJ/edit/main/HFDS.pdf]">
+</div>
+
 
 This is the code for our work [Lange, Böhler et al., arXiv...](...). We use Hidden Fermion Determinant States as introduced by [Moreno et al. (2022)](https://www.pnas.org/doi/10.1073/pnas.2122059119). 
 
