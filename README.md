@@ -1,5 +1,5 @@
 <div align="center">
-    <img width="479" alt="HFDS" src="https://github.com/HannahLange/HFDSfortJ/blob/main/HFDS.png">
+    <img width="579" alt="HFDS" src="https://github.com/HannahLange/HFDSfortJ/blob/main/HFDS.png">
 </div>
 
 
