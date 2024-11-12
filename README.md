@@ -1,5 +1,5 @@
 <div align="center">
-    <img width="479" alt="Momentum_git" src="[https://github.com/HannahLange/HFDSfortJ/edit/main/HFDS.pdf]">
+    <img width="479" alt="HFDS" src="[https://github.com/HannahLange/HFDSfortJ/edit/main/HFDS.pdf]">
 </div>
 
 
