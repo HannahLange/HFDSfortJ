@@ -16,10 +16,13 @@ except:
 import sys
 sys.path.insert(1, '/project/th-scratch/h/Hannah.Lange/PhD/ML/HiddenFermions/src')
 import argparse
+import numpy as np
 from jax import numpy as jnp
 import netket as nk
 import jax
 from netket import experimental as nkx
+import json
+import optax
 import os
 import flax
 os.environ['JAX_TRACEBACK_FILTERING'] = 'off'
@@ -29,8 +32,11 @@ from netket.experimental.operator.fermion import create as cdag
 from netket.experimental.operator.fermion import number as nc
 
 
-from hiddenfermions_sym import *
-from exchange_new_sym import *
+from hiddenfermions import *
+from backflow import *
+from exchange_new import *
+from helper import *
+from transformer import *
 
 
 parser = argparse.ArgumentParser()
@@ -46,11 +52,11 @@ parser.add_argument("-init"  , "--MFinit"    , type=str, default = "Fermi" , hel
 parser.add_argument("-f"  , "--features"    , type=int, default = 32 , help="number of features for transformer / FFNN")
 parser.add_argument("-l"  , "--layers"    , type=int, default = 1 , help="number of layers")
 parser.add_argument("-nhid"  , "--nhid"    , type=int, default = 10 , help="number of hidden fermions")
+parser.add_argument("-det"  , "--det"    , type=str, default = "hidden" , help="type of determinant: hidden or backflow")
 parser.add_argument("-dtype"  , "--dtype"    , type=str, default = "real" , help="complex or real")
 
-load = True
+load = False
 
-# parse arguments
 args = parser.parse_args()
 L1      = args.Nx
 L2      = args.Ny
@@ -61,13 +67,10 @@ t       = args.t
 b1      = args.b1
 b2      = args.b2
 dtype   = args.dtype
-MFinitialization = args.MFinit
-determinant_type = "hidden"
+determinant_type = args.det
 bounds  = {1:{1:"OBC"}, 0:{0:"PBC"}}[b1][b2]
-
-
 print("params: Jz=", Jz, "Jp=", Jp, "=", t, "Lx=", L1, "Lt=", L2, "bounds=", b1, b2)
-
+MFinitialization = args.MFinit
 
 
 # more parameters for the physical system
@@ -90,18 +93,28 @@ n_modes          = 2*L1*L2
 cs               = n_samples
 
 
-# --------------- define the network  -------------------
+# --------------- define the network -------------------
 boundary_conditions = 'pbc' if pbc[0] else 'obc'
-filename = f"results_sym/energy_{L1}x{L2}_{boundary_conditions}x{boundary_conditions}_Nup={N_up}_Ndn={N_dn}_t={t}_Jz={Jz}_Jp={Jp}_lr={lr}_nlayers={layers}_nfeatures={features}_nhid={n_hid}_nsamples={n_samples}_{determinant_type}_"+MFinitialization+"_"+dtype
+filename = f"results/energy_{L1}x{L2}_{boundary_conditions}x{boundary_conditions}_Nup={N_up}_Ndn={N_dn}_t={t}_Jz={Jz}_Jp={Jp}_lr={lr}_nlayers={layers}_nfeatures={features}_nhid={n_hid}_nsamples={n_samples}_{determinant_type}_"+MFinitialization+"_"+dtype
+
 g = nk.graph.Grid([L1,L2],pbc=pbc)
 hi = nkx.hilbert.SpinOrbitalFermions(N_sites, s = 1/2, n_fermions_per_spin = (N_up, N_dn))
 print(hi.size)
 
+def Sz(site):
+  return 1/2*(nc(hi, site, up) - nc(hi, site, down))
+
+def Splus(site):
+  return cdag(hi, site,up)*c(hi, site,down)
+
+def Sminus(site):
+  return cdag(hi, site,down)*c(hi, site,up)
+
 
 if dtype=="real": dtype_ = jnp.float64
 else: dtype_ = jnp.complex128
-
-ma = HiddenFermion(n_elecs=n_elecs,
+if determinant_type=="hidden":
+    ma = HiddenFermion(n_elecs=n_elecs,
                    network="FFNN",
                    n_hid=n_hid,
                    Lx=L1,
@@ -115,18 +128,21 @@ ma = HiddenFermion(n_elecs=n_elecs,
                    stop_grad_lower_block=False,
                    bounds=bounds,
                    dtype=dtype_)
-
+if determinant_type=="backflow":
+    ma = Backflow(n_elecs=n_elecs,
+                   network="FFNN",
+                   Lx=L1,
+                   Ly=L2,
+                   layers=layers,
+                   features=features,
+                   double_occupancy_bool=double_occupancy,
+                   MFinit=MFinitialization,
+                   hilbert=hi,
+                   stop_grad_mf=False,
+                   bounds=bounds,
+                   dtype=dtype_)
 
 # ------------- define Hamiltonian ------------------------
-def Sz(site):
-  return 1/2*(nc(hi, site, up) - nc(hi, site, down))
-
-def Splus(site):
-  return cdag(hi, site,up)*c(hi, site,down)
-
-def Sminus(site):
-  return cdag(hi, site,down)*c(hi, site,up)
-
 up, down = +1, -1
 ha = 0.0
 for sz in (up, down):
@@ -143,15 +159,47 @@ for u,v in g.edges():
 # ---------- define sampler ------------------------
 sa = nk.sampler.MetropolisSampler(hi, n_chains=n_chains, rule=tJExchangeRule(graph=g))
 
-vstate = nk.vqs.MCState(sa, ma, n_samples=n_samples, chunk_size=cs, n_discard_per_chain=32) #defines the variational state object
+vstate = nk.vqs.MCState(sa, ma, n_samples=n_samples, chunk_size=cs, n_discard_per_chain=16) #defines the variational state object
 total_params = sum(p.size for p in jax.tree_util.tree_leaves(vstate.parameters))
 print(f'Total number of parameters: {total_params}')
 
+# thermalize samples
+for i in range(5):
+    vstate.sample()
 
 # -------------- start the training ---------------
+if not load:
+  schedule = optax.linear_schedule(init_value=1e-2, end_value=5e-4, transition_steps=n_steps-100)
+  schedule_lr = optax.linear_schedule(init_value=lr, end_value=lr/2, transition_steps=n_steps-100)
+  #sr = nk.optimizer.SR(diag_shift=schedule)
+  op = nk.optimizer.Sgd(learning_rate=schedule_lr)
+  #gs = nk.VMC(ha, op, variational_state=vstate, preconditioner=sr)
+  gs = nkx.driver.VMC_SRt(ha, op, diag_shift=schedule, variational_state=vstate)
+  gs.run(n_iter=n_steps-100, out=filename)
+
+  with open("results/res"+filename.split("energy")[1]+".mpack", 'wb') as file:
+    file.write(flax.serialization.to_bytes(vstate))
+
+
+# stage 2
+vstate = nk.vqs.MCState(sa, ma, n_samples=n_samples, chunk_size=cs, n_discard_per_chain=32) #defines the variational state object
 with open(filename+".mpack", 'rb') as file:
   print("load vstate parameters")
   vstate.variables = flax.serialization.from_bytes(vstate.variables, file.read())
-  
-#evaluate any observable...
+  #vstate = flax.serialization.from_bytes(vstate, file.read())
+filename += "_2"
+total_params = sum(p.size for p in jax.tree_util.tree_leaves(vstate.parameters))
+print(f'Total number of parameters: {total_params}')
 
+schedule = optax.linear_schedule(init_value=1e-2, end_value=5e-4, transition_steps=100)
+schedule_lr = optax.linear_schedule(init_value=lr, end_value=lr/2, transition_steps=100)
+op = nk.optimizer.Sgd(learning_rate=schedule_lr)
+gs = nkx.driver.VMC_SRt(ha, op, diag_shift=schedule, variational_state=vstate)
+gs.run(n_iter=100, out=filename)
+with open("results/res"+filename.split("energy")[1]+".mpack", 'wb') as file:
+    file.write(flax.serialization.to_bytes(vstate))
+
+
+#calculate spin correlations
+jax.lax.stop_gradient(calculate_spin_corrs(L1, L2, g, hi, vstate, filename))
+jax.lax.stop_gradient(calculate_polaron_corrs(L1, L2, g, hi, vstate, filename))
