@@ -174,7 +174,7 @@ class Orbitals(nn.Module):
 
 
   def _init_orbitals_hartree(self, key, shape,dtype):
-    mf = np.load("path to Hartree orbitals")
+    mf = np.load("/project/th-scratch/h/Hannah.Lange/PhD/ML/HiddenFermions/src/orbs_8.0_16_14.npy")
     mf = jnp.array(mf)
     jax.debug.print("mf={x}",x=mf)
     return dtype(mf)
