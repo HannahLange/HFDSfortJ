@@ -81,6 +81,15 @@ class HiddenFermion(nn.Module):
     else:
       return logx, jnp.log(sign + 0j)
 
+  def flip_single_true(self, sigma):
+    ind = jnp.nonzero(sigma[:sigma.shape[0]//2],size=1)[0]
+    new_sigma = sigma.copy()
+    new_sigma = new_sigma.at[ind].set(0.0)
+    new_sigma = new_sigma.at[ind+sigma.shape[0]//2].set(1.0)
+    return new_sigma
+    
+  def flip_single_false(self, sigma):
+    return sigma
 
   def gen_reflected_samples(self,x):
     x = jax.lax.cond(self.n_elecs%2==1, self.flip_single_true, self.flip_single_false,x)
